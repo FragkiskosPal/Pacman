@@ -1,0 +1,289 @@
+import copy
+import sys
+import time
+
+# Αυξάνουμε το όριο αναδρομής για να αποφύγουμε σφάλματα στοίβας σε βαθιές αναδρομές
+sys.setrecursionlimit(10**6)
+
+"""
+Βοηθητικές συναρτήσεις για τον έλεγχο συνθηκών τελεστών.
+Αξιολογούν εάν μπορούν να εφαρμοστούν συγκεκριμένες ενέργειες από την τρέχουσα κατάσταση.
+"""
+
+def can_move_left(state):
+    # Ελέγχει εάν το αντικείμενο μπορεί να μετακινηθεί προς τα αριστερά
+    for i in range(len(state)):
+        if state[i][0] == 'p' and i > 0:
+            # Το αντικείμενο βρίσκεται σε θέση που επιτρέπει κίνηση προς τα αριστερά
+            return True
+    return False
+
+def can_move_right(state):
+    # Ελέγχει εάν το αντικείμενο μπορεί να μετακινηθεί προς τα δεξιά
+    for i in range(len(state)):
+        if state[i][0] == 'p' and i < len(state) - 1:
+            # Το αντικείμενο βρίσκεται σε θέση που επιτρέπει κίνηση προς τα δεξιά
+            return True
+    return False
+
+def can_eat(state):
+    # Ελέγχει εάν το αντικείμενο μπορεί να εκτελέσει την ενέργεια 'eat' στη θέση του
+    for i in range(len(state)):
+        if state[i][0] == 'p' and state[i][1] in ('f', 'd'):
+            # Υπάρχει φρούτο προς κατανάλωση (φαγώσιμο ή δηλητηριώδες) στη θέση του αντικειμένου
+            return True
+    return False
+
+"""
+Συναρτήσεις τελεστών.
+Κάθε συνάρτηση αντιπροσωπεύει μια ενέργεια που μπορεί να εκτελεστεί από την τρέχουσα κατάσταση.
+Επιστρέφει τη νέα κατάσταση μετά την εφαρμογή του τελεστή ή None εάν ο τελεστής δεν μπορεί να εφαρμοστεί.
+"""
+
+def eat(state):
+    # Εκτελεί την ενέργεια 'eat' εάν είναι δυνατή
+    if can_eat(state):
+        for i in range(len(state)):
+            if state[i][0] == 'p':
+                if state[i][1] == 'f':
+                    # Κατανάλωση φαγώσιμου φρούτου
+                    state[i][1] = ''
+                    return state
+                elif state[i][1] == 'd':
+                    # Κατανάλωση δηλητηριώδους φρούτου
+                    state[i][1] = ''
+                    # Τοποθέτηση νέου φαγώσιμου φρούτου στην πρώτη διαθέσιμη θέση (μη τυχαια)
+                    for index, cell in enumerate(state):
+                        if cell[0] == '' and cell[1] == '':
+                            state[index][1] = 'f'
+                            break
+                    return state
+    else:
+        # Ο τελεστής 'eat' δεν μπορεί να εφαρμοστεί στην τρέχουσα κατάσταση
+        return None
+
+def move_right(state):
+    # Εκτελεί την κίνηση προς τα δεξιά εάν είναι δυνατή
+    if can_move_right(state):
+        for i in range(len(state)):
+            if state[i][0] == 'p':
+                # Μετακίνηση του αντικειμένου ένα βήμα προς τα δεξιά
+                state[i][0] = ''
+                state[i + 1][0] = 'p'
+                return state
+    else:
+        # Η κίνηση προς τα δεξιά δεν είναι δυνατή
+        return None
+
+def move_left(state):
+    # Εκτελεί την κίνηση προς τα αριστερά εάν είναι δυνατή
+    if can_move_left(state):
+        for i in range(len(state)):
+            if state[i][0] == 'p':
+                # Μετακίνηση του αντικειμένου ένα βήμα προς τα αριστερά
+                state[i][0] = ''
+                state[i - 1][0] = 'p'
+                return state
+    else:
+        # Η κίνηση προς τα αριστερά δεν είναι δυνατή
+        return None
+
+"""
+Συνάρτηση για τον έλεγχο αν η τρέχουσα κατάσταση είναι η κατάσταση στόχος.
+Η κατάσταση στόχος επιτυγχάνεται όταν δεν υπάρχουν φαγώσιμα ή δηλητηριώδη φρούτα ('f' ή 'd') στο state.
+"""
+
+def is_goal_state(state):
+    # Ελέγχει αν έχουν αφαιρεθεί όλα τα φαγώσιμα και δηλητηριώδη φρούτα από το state
+    for cell in state:
+        if cell[1] in ('f', 'd'):
+            # Υπάρχει ακόμα φαγώσιμο ή δηλητηριώδες φρούτο στο state
+            return False
+    # Όλα τα φαγώσιμα και δηλητηριώδη φρούτα έχουν αφαιρεθεί
+    return True
+
+"""
+Αυτό επιτρέπει γρήγορη αναζήτηση και αποφυγή επαναλαμβανόμενων καταστάσεων.
+"""
+
+def state_to_tuple(state):
+    # Μετατρέπει κάθε κελί σε tuple και επιστρέφει ένα tuple της κατάστασης
+    return tuple((cell[0], cell[1]) for cell in state)
+
+"""
+Βρίσκει όλες τις δυνατές επόμενες καταστάσεις από την τρέχουσα κατάσταση.
+Εφαρμόζει όλους τους δυνατούς τελεστές και συλλέγει τις καταστάσεις που προκύπτουν.
+"""
+
+def find_children(state):
+    children = []
+
+    # Εφαρμογή του τελεστή 'move_left'
+    left_state = copy.deepcopy(state)
+    child_left = move_left(left_state)
+    if child_left is not None:
+        children.append(child_left)
+
+    # Εφαρμογή του τελεστή 'move_right'
+    right_state = copy.deepcopy(state)
+    child_right = move_right(right_state)
+    if child_right is not None:
+        children.append(child_right)
+
+    # Εφαρμογή του τελεστή 'eat'
+    eat_state = copy.deepcopy(state)
+    child_eat = eat(eat_state)
+    if child_eat is not None:
+        children.append(child_eat)
+
+    # Επιστρέφει τη λίστα των παιδιών καταστάσεων
+    return children
+
+"""
+Διαχείριση του μετώπου αναζήτησης (front).
+Η συνάρτηση 'make_front' αρχικοποιεί το μέτωπο, και η 'expand_front' το επεκτείνει ανάλογα με τη μέθοδο αναζήτησης.
+"""
+
+def make_front(state):
+    # Αρχικοποίηση του μετώπου με την αρχική κατάσταση
+    return [state]
+
+def expand_front(front, method):
+    # Επεκτείνει το μέτωπο με βάση τη μέθοδο αναζήτησης (DFS, BFS, BestFS)
+    if method == 'DFS':
+        if front:
+            print("Front:")
+            print(front)
+            node = front.pop(0)
+            # Εξερεύνηση παιδιών
+            for child in find_children(node):
+                # Στην DFS, προσθέτουμε τα παιδιά στην αρχή του μετώπου
+                front.insert(0, child)
+    elif method == 'BFS':
+        if front:
+            print("Front:")
+            print(front)
+            node = front.pop(0)
+            # Εξερεύνηση παιδιών
+            for child in find_children(node):
+                # Στην BFS, προσθέτουμε τα παιδιά στο τέλος του μετώπου
+                front.append(child)
+    elif method == 'BestFS':
+        if front:
+            print("Front:")
+            print(front)
+            node = front.pop(0)
+            # Εξερεύνηση παιδιών με ευριστική αξιολόγηση
+            children = find_children(node)
+            # Υπολογισμός ευριστικής τιμής για κάθε παιδί
+            children_with_heuristic = []
+            for child in children:
+                h_value = heuristic(child)
+                children_with_heuristic.append((h_value, child))
+            # Ταξινόμηση παιδιών με βάση την ευριστική τιμή
+            children_with_heuristic.sort(key=lambda x: x[0])
+            # Προσθήκη των παιδιών στο μέτωπο
+            for _, child in children_with_heuristic:
+                front.append(child)
+    return front
+
+"""
+Ευριστική συνάρτηση που χρησιμοποιείται στη μέθοδο BestFS.
+Εκτιμά την απόσταση από την κατάσταση στόχο μετρώντας τον αριθμό των φαγώσιμων και δηλητηριωδών φρούτων που απομένουν.
+"""
+
+def heuristic(state):
+    # Υπολογίζει τον αριθμό των φαγώσιμων και δηλητηριωδών φρούτων που απομένουν
+    count = 0
+    for cell in state:
+        if cell[1] in ('f', 'd'):
+            count += 1
+    return count
+
+"""
+Αναδρομική συνάρτηση αναζήτησης της λύσης.
+Χρησιμοποιεί το μέτωπο, το σύνολο των κλειστών καταστάσεων και τη μέθοδο αναζήτησης.
+"""
+
+final_queue = []  # Global μεταβλητή για την αποθήκευση της τελικής ουράς
+
+def find_solution(front, closed, method):
+    global final_queue  # Δήλωση χρήσης της global μεταβλητής
+    if not front:
+        # Εάν το μέτωπο είναι κενό, δεν υπάρχει λύση
+        print('_NO_SOLUTION_FOUND_')
+        final_queue = []  # Αποθήκευση της κενής ουράς
+    else:
+        current_state = front.pop(0)
+        state_tuple = state_to_tuple(current_state)
+
+        if state_tuple in closed:
+            # Η κατάσταση έχει ήδη εξερευνηθεί
+            find_solution(front, closed, method)
+        elif is_goal_state(current_state):
+            # Έχει βρεθεί η κατάσταση στόχος
+            print('_GOAL_FOUND_')
+            print(current_state)
+            final_queue = front + [current_state]  # Αποθήκευση της τελικής ουράς
+        else:
+            # Προσθήκη της τρέχουσας κατάστασης στο κλειστό σύνολο
+            closed.add(state_tuple)
+            # Επέκταση του μετώπου
+            front_copy = copy.deepcopy(front)
+            front_children = expand_front([current_state] + front_copy, method)
+            # Αναδρομική κλήση για συνέχιση της αναζήτησης
+            find_solution(front_children, closed, method)
+
+"""
+Κύρια συνάρτηση εκτέλεσης του προγράμματος.
+Εκτυπώνει τα αποτελέσματα και τον χρόνο εκτέλεσης.
+"""
+
+def main():
+    global final_queue  # Δήλωση χρήσης της global μεταβλητής
+    # Ορισμός της αρχικής κατάστασης
+    initial_state = [['', 'd'], ['', 'f'], ['p', ''], ['', ''], ['', 'f'], ['', '']]
+    print("Επιλέξτε μέθοδο αναζήτησης:")
+    print("1. DFS (Αναζήτηση σε βάθος)")
+    print("2. BFS (Αναζήτηση σε πλάτος)")
+    print("3. BestFS (Αναζήτηση με Βέλτιστο Τρόπο)")
+    
+    choice = input("Εισάγετε επιλογή (1, 2 ή 3): ")
+    
+    # Input validation
+    while choice not in ['1', '2', '3']:
+        print("Μη έγκυρη επιλογή. Παρακαλώ εισάγετε 1, 2 ή 3.")
+        choice = input("Εισάγετε επιλογή (1, 2 ή 3): ")
+    
+    # Map choice to method
+    method = None
+    if choice == '1':
+        method = 'DFS'
+    elif choice == '2':
+        method = 'BFS'
+    elif choice == '3':
+        method = 'BestFS'
+    
+    # Measure execution time
+    start_time = time.time()
+    
+    # Initialize front and closed set
+    front = [initial_state]
+    closed = set()
+    
+    # Call the search function
+    find_solution(front, closed, method)
+    
+    # Καταγραφή του χρόνου λήξης και υπολογισμός του χρόνου εκτέλεσης
+    end_time = time.time()
+    execution_time = end_time - start_time
+    print(f"Χρόνος εκτέλεσης: {execution_time} δευτερόλεπτα")
+
+    # Εκτύπωση της τελικής ουράς στο τέλος
+    print("Τελική ουρά:")
+    for state in final_queue:
+        print(state)
+
+# Έναρξη εκτέλεσης του προγράμματος
+if __name__ == "__main__":
+    main()
